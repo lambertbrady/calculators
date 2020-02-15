@@ -12,16 +12,16 @@ const curry = fn => {
    };
 }
 
-function getCostRange(premium, maxOOP) {
+function getCostRange(premium, limitOutOfPocket) {
    // [min, max] $ per year
-   return [premium, premium + maxOOP];
+   return [premium, premium + limitOutOfPocket];
 }
 
 class Plan {
-   constructor(premium, deductible, maxOOP, copay, coinsurance, deductiblePaid = 0, maxOOPPaid = 0) {
-      // TODO: can't enter deductiblePaid and maxOOPPaid as plain parameters, since they are related (deductible payments contribute to maxOOP)
-      if (maxOOP < deductible) {
-         throw new Error('maxOOP must be a number greater than or equal to deductible');
+   constructor(premium, deductible, limitOutOfPocket, copay, coinsurance) {
+      // TODO: can't enter deductiblePaid and limitOutOfPocketPaid as plain parameters, since they are related (deductible payments contribute to limitOutOfPocket)
+      if (limitOutOfPocket < deductible) {
+         throw new Error('limitOutOfPocket must be a number greater than or equal to deductible');
       }
       if (coinsurance < 0 || coinsurance > 1) {
          throw new Error('coinsurance must be a number between 0 and 1 (inclusive)');
@@ -30,56 +30,50 @@ class Plan {
       // $ per year
       this.premium = premium;
       this.deductible = deductible;
-      this.maxOOP = maxOOP;
+      this.limitOutOfPocket = limitOutOfPocket;
       // $
       this.copay = copay;
       // %
       this.coinsurance = coinsurance;
 
-      if (deductiblePaid < 0 || deductiblePaid > deductible) {
-         throw new Error('deductiblePaid must be a number between 0 and deductible (inclusive)');
-      }
-      if (maxOOPPaid < 0 || maxOOPPaid > maxOOP) {
-         throw new Error('maxOOPPaid must be a number between 0 and maxOOP (inclusive)');
-      }
       // state variables
       // $
-      this.deductiblePaid = deductiblePaid;
-      this.maxOOPPaid = maxOOPPaid;
+      this.deductiblePaid = 0;
+      this.limitOutOfPocketPaid = 0;
    }
 
    deductibleReached() {
       return this.deductiblePaid === this.deductible;
    }
-   maxOOPReached() {
-      return this.maxOOPPaid === this.maxOOP;
+   limitOutOfPocketReached() {
+      return this.limitOutOfPocketPaid === this.limitOutOfPocket;
    }
 
    calcCostCopay() {
       // copay does not contribute to deductible
-      // copay contributes to maxOOP
+      // copay contributes to limitOutOfPocket
       let amountOwed;
-      if (this.maxOOPReached()) {
-         // maxOOP already reached, nothing owed
+      if (this.limitOutOfPocketReached()) {
+         // limitOutOfPocket already reached, nothing owed
          amountOwed = 0
-      } else if (this.copay + this.maxOOPPaid > this.maxOOP) {
-         // full copay exceeds maxOOP, only pay remaining OOP balance
-         amountOwed = this.maxOOP - this.maxOOPPaid;
+      } else if (this.copay + this.limitOutOfPocketPaid > this.limitOutOfPocket) {
+         // full copay exceeds limitOutOfPocket, only pay remaining OOP balance
+         amountOwed = this.limitOutOfPocket - this.limitOutOfPocketPaid;
       } else {
-         // copay does not exceed maxOOP, full copay owed
+         // copay does not exceed limitOutOfPocket, full copay owed
          amountOwed = this.copay;
       }
 
-      this.maxOOPPaid += amountOwed;
+      this.limitOutOfPocketPaid += amountOwed;
       return amountOwed;
    }
 
    calcCostCoinsurance(amountBilled) {
       // coinsurance contributes to deductible
-      // coinsurance contributes to maxOOP
+      // coinsurance contributes to limitOutOfPocket
       let amountOwed;
-      if (this.maxOOPReached()) {
-         // maxOOP already reached, nothing owed
+      if (this.limitOutOfPocketReached()) {
+         // limitOutOfPocket already reached, nothing owed
          amountOwed = 0
       } else {
          if (this.deductibleReached()) {
@@ -98,19 +92,19 @@ class Plan {
             }
          }
       }
-      // check maxOOP
-      if (amountOwed + this.maxOOPPaid > this.maxOOP) {
-         // full amount exceeds maxOOP, only pay remaining OOP balance
-         amountOwed = this.maxOOP - this.maxOOPPaid;
+      // check limitOutOfPocket
+      if (amountOwed + this.limitOutOfPocketPaid > this.limitOutOfPocket) {
+         // full amount exceeds limitOutOfPocket, only pay remaining OOP balance
+         amountOwed = this.limitOutOfPocket - this.limitOutOfPocketPaid;
       }
 
-      this.maxOOPPaid += amountOwed;
+      this.limitOutOfPocketPaid += amountOwed;
       return amountOwed;
    }
 }
 
 // TODO: calcCost methods currently update paid values - change so this happens separately
-let planA = new Plan(4000, 1000, 10000, 50, .2, 0, 9951);
+let planA = new Plan(4000, 1000, 10000, 50, .2);
 console.log(planA.calcCostCopay());
 let planB = new Plan(4000, 1000, 10000, 50, .2);
 console.log(planB.calcCostCoinsurance(1100));
