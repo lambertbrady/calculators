@@ -12,99 +12,126 @@ const curry = fn => {
    };
 }
 
-function getCostRange(premium, limitOutOfPocket) {
-   // [min, max] $ per year
-   return [premium, premium + limitOutOfPocket];
+class Limit {
+   constructor(limit) {
+      this.limit = limit;
+
+      this.amountPaid = 0;
+   }
+
+   get limitReached() {
+      return this.amountPaid === this.limit;
+   }
+
+   calcPayment(amount) {
+      let payment;
+      if (amount + this.amountPaid > this.limit) {
+         // full amount exceeds limit; only pay remaining balance (which is 0 if limit has already been reached)
+         payment = this.limit - this.amountPaid;
+      } else {
+         // amount does not exceed limit; full amount owed
+         payment = amount;
+      }
+
+      return payment;
+   }
+   
+   pay(amount) {
+      const payment = this.calcPayment(amount);
+      this.amountPaid += payment;
+
+      return payment;
+   }
+}
+
+class Service {
+   constructor(type, defaultBill) {
+      this.type = type;
+
+      this.defaultBill = defaultBill;
+
+      // this.isCovered;
+      this.deductibles = [];
+   }
 }
 
 class Plan {
-   constructor(premium, deductible, limitOutOfPocket, copay, coinsurance) {
-      // TODO: can't enter deductiblePaid and limitOutOfPocketPaid as plain parameters, since they are related (deductible payments contribute to limitOutOfPocket)
-      if (limitOutOfPocket < deductible) {
-         throw new Error('limitOutOfPocket must be a number greater than or equal to deductible');
+   constructor(premium, deductible, outOfPocketLimit) {
+      // TODO: can't enter deductiblePaid and outOfPocketLimitPaid as plain parameters, since they are related (deductible payments contribute to outOfPocketLimit)
+      if (outOfPocketLimit < deductible) {
+         throw new Error('outOfPocketLimit must be a number greater than or equal to deductible');
       }
-      if (coinsurance < 0 || coinsurance > 1) {
-         throw new Error('coinsurance must be a number between 0 and 1 (inclusive)');
-      }
+      // if (coinsurance < 0 || coinsurance > 1) {
+      //    throw new Error('coinsurance must be a number between 0 and 1 (inclusive)');
+      // }
       // fixed variables
       // $ per year
       this.premium = premium;
-      this.deductible = deductible;
-      this.limitOutOfPocket = limitOutOfPocket;
+      this.deductible = new Limit(deductible);
+      this.outOfPocketLimit = new Limit(outOfPocketLimit);
       // $
-      this.copay = copay;
+      // this.copay = copay;
       // %
-      this.coinsurance = coinsurance;
+      // this.coinsurance = coinsurance;
+
+      this.services = ['primaryCareOfficeVisit', 'primaryCareOutpatientServices', 'specialistVisit', 'preventiveCare', 'diagnosticTest', 'imaging', 'drugsTier1', 'drugsTier2', 'drugsTier3', 'drugsTier4', 'mentalHealthOfficeVisit', 'mentalHealthOutpatientServices', 'mentalHealthInpatientServices'];
+      this.servicesInNetwork;
+      this.servicesOutOfNetwork;
 
       // state variables
       // $
-      this.deductiblePaid = 0;
-      this.limitOutOfPocketPaid = 0;
+      // this.deductiblePaid = 0;
+      // this.outOfPocketLimitPaid = 0;
    }
 
-   deductibleReached() {
-      return this.deductiblePaid === this.deductible;
-   }
-   limitOutOfPocketReached() {
-      return this.limitOutOfPocketPaid === this.limitOutOfPocket;
-   }
-
-   calcCostCopay() {
+   calcCostCopay(amountBilled, copay) {
       // copay does not contribute to deductible
-      // copay contributes to limitOutOfPocket
-      let amountOwed;
-      if (this.limitOutOfPocketReached()) {
-         // limitOutOfPocket already reached, nothing owed
-         amountOwed = 0
-      } else if (this.copay + this.limitOutOfPocketPaid > this.limitOutOfPocket) {
-         // full copay exceeds limitOutOfPocket, only pay remaining OOP balance
-         amountOwed = this.limitOutOfPocket - this.limitOutOfPocketPaid;
-      } else {
-         // copay does not exceed limitOutOfPocket, full copay owed
-         amountOwed = this.copay;
-      }
-
-      this.limitOutOfPocketPaid += amountOwed;
-      return amountOwed;
+      // copay contributes to outOfPocketLimit
+      
+      return this.outOfPocketLimit.calcPayment(copay);
+   }
+   payCopay(amountBilled, copay) {
+      // copay does not contribute to deductible
+      // copay contributes to outOfPocketLimit
+      
+      return this.outOfPocketLimit.pay(copay);
    }
 
-   calcCostCoinsurance(amountBilled) {
+   calcCostCoinsurance(amountBilled, coinsurance) {
       // coinsurance contributes to deductible
-      // coinsurance contributes to limitOutOfPocket
-      let amountOwed;
-      if (this.limitOutOfPocketReached()) {
-         // limitOutOfPocket already reached, nothing owed
-         amountOwed = 0
-      } else {
-         if (this.deductibleReached()) {
-            // deductible already reached, cost fully covered by coinsurance
-            amountOwed = this.coinsurance * amountBilled;
-         } else {
-            const deductibleRemaining = this.deductible - this.deductiblePaid;
-            if (amountBilled <= deductibleRemaining) {
-               // payment does not exceed deductible, no coinsurance applied
-               amountOwed = amountBilled;
-               this.deductiblePaid += amountBilled;
-            } else {
-               // full payment exceeds deductible, must pay remaining deductible plus left over amount with coinsurance applied
-               amountOwed = deductibleRemaining + this.coinsurance * (amountBilled - deductibleRemaining);
-               this.deductiblePaid = this.deductible;
-            }
-         }
-      }
-      // check limitOutOfPocket
-      if (amountOwed + this.limitOutOfPocketPaid > this.limitOutOfPocket) {
-         // full amount exceeds limitOutOfPocket, only pay remaining OOP balance
-         amountOwed = this.limitOutOfPocket - this.limitOutOfPocketPaid;
-      }
+      // coinsurance contributes to outOfPocketLimit
 
-      this.limitOutOfPocketPaid += amountOwed;
-      return amountOwed;
+      // pay deductible
+      const deductiblePayment = this.deductible.calcPayment(amountBilled);
+      // apply coinsurance to costs beyond deductible
+      const coinsurancePayment = (amountBilled - deductiblePayment) * coinsurance;
+      // pay coinsurance, limited to outOfPocketLimit
+      return this.outOfPocketLimit.calcPayment(deductiblePayment + coinsurancePayment);
+   }
+   payCoinsurance(amountBilled, coinsurance) {
+      // coinsurance contributes to deductible
+      // coinsurance contributes to outOfPocketLimit
+
+      // pay deductible
+      const deductiblePayment = this.deductible.pay(amountBilled);
+      // apply coinsurance to costs beyond deductible
+      const coinsurancePayment = (amountBilled - deductiblePayment) * coinsurance;
+      // pay coinsurance, limited to outOfPocketLimit
+      return this.outOfPocketLimit.pay(deductiblePayment + coinsurancePayment);
    }
 }
 
-// TODO: calcCost methods currently update paid values - change so this happens separately
-let planA = new Plan(4000, 1000, 10000, 50, .2);
-console.log(planA.calcCostCopay());
-let planB = new Plan(4000, 1000, 10000, 50, .2);
-console.log(planB.calcCostCoinsurance(1100));
+
+let planA = new Plan(4000, 1000, 10000);
+planA.outOfPocketLimit.pay(9959);
+console.log(planA.calcCostCopay(100, 50));
+let planB = new Plan(4000, 1000, 2000);
+console.log('------');
+console.log(planB.deductible);
+console.log(planB.outOfPocketLimit);
+console.log(planB.payCoinsurance(2000, .2));
+console.log(planB.deductible);
+console.log(planB.outOfPocketLimit);
+console.log(planB.payCoinsurance(2000, .2));
+console.log(planB.deductible);
+console.log(planB.outOfPocketLimit);
